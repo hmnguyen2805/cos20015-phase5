@@ -2,8 +2,12 @@
 app/config/config.php
 # SMTP login for report emails (copy from mail.example.php). Never commit.
 app/config/mail.php
+# Claude API key for the AI narrative extraction (copy from ai.example.php). Never commit.
+app/config/ai.php
 # Report emails saved when no SMTP server is configured (contain report data).
 storage/outbox/
+# Scheduler log, heartbeat and lock file (written by app/tools/run_automation.php).
+storage/logs/
 
 # Python / editor / OS clutter
 __pycache__/

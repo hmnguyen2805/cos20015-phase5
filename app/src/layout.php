@@ -13,6 +13,8 @@ function nav_items(): array
         ['consents.php',    'Consents',  false],
         ['search.php',      'Search',    false],
         ['reports.php',     'Reports',   false],
+        ['automation.php',  'Automation', false],
+        ['ai_review.php',   'AI review', true],
         ['admin_users.php', 'Users',     true],
         ['admin_audit.php', 'Audit log', true],
     ];
