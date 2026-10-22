@@ -1,0 +1,3 @@
+FPDF 1.9.0 (2026-05-31), from https://github.com/Setasign/FPDF release 1.9.0 (official mirror of http://www.fpdf.org).
+Only fpdf.php, the core font metrics (font/*.json) and the licence are vendored; docs, tutorials and makefont are left out.
+SHA-256 of fpdf.php: d1ea5c753979a28396af2a0c7ea43af16e6e5510171704d650d5d68fb5cd6a56

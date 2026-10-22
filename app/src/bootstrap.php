@@ -11,6 +11,9 @@ declare(strict_types=1);
 const APP_NAME = 'Clinical Trial Tracker';
 const SESSION_IDLE_SECONDS = 1800;   // 30 minutes
 
+// XAMPP's php.ini defaults to Europe/Berlin; report stamps and PDF dates use local time.
+date_default_timezone_set('Australia/Melbourne');
+
 function config(): array
 {
     static $cfg = null;
