@@ -25,6 +25,29 @@ const AI_PROVIDERS = [
                  'endpoint' => 'https://api.anthropic.com/v1/messages'],
 ];
 
+/** A rate-limit answer (HTTP 429, or 529 overloaded): the caller may wait $retryAfter seconds and try again. */
+final class AiRateLimited extends RuntimeException
+{
+    public function __construct(string $message, public readonly int $retryAfter)
+    {
+        parent::__construct($message);
+    }
+}
+
+/** Seconds to wait from a 429/529 answer: Google's RetryInfo, "retry in 6.4s" text, or a default. */
+function ai_retry_after(array $res): int
+{
+    foreach ($res['error']['details'] ?? [] as $d) {
+        if (isset($d['retryDelay']) && preg_match('/^(\d+(?:\.\d+)?)s$/', (string)$d['retryDelay'], $m)) {
+            return (int)ceil((float)$m[1]);
+        }
+    }
+    if (preg_match('/retry in (\d+(?:\.\d+)?)\s*s/i', (string)($res['error']['message'] ?? ''), $m)) {
+        return (int)ceil((float)$m[1]);
+    }
+    return 20;
+}
+
 function ai_config(): ?array
 {
     static $cfg = false;
@@ -159,6 +182,9 @@ function ai_call_claude(array $c, string $user): array
         'tool_choice' => ['type' => 'tool', 'name' => AI_TOOL],
         'messages'    => [['role' => 'user', 'content' => $user]],
     ], (int)$c['timeout']);
+    if ($code === 429 || $code === 529) {
+        throw new AiRateLimited("Claude API busy or rate limit reached ($code)", ai_retry_after($res));
+    }
     if ($code !== 200) {
         throw new RuntimeException("Claude API error $code: " . ($res['error']['message'] ?? $res['raw'] ?? 'no details'));
     }
@@ -221,6 +247,9 @@ function ai_call_gemini(array $c, string $user, bool $schemaInPrompt = false): a
         // Older API version without JSON Schema support: put the schema in the prompt instead.
         return ai_call_gemini($c, $user, true);
     }
+    if ($code === 429 || $code === 503) {
+        throw new AiRateLimited("Gemini rate limit reached ($code; the free tier allows about 15 requests a minute)", ai_retry_after($res));
+    }
     if ($code !== 200) {
         throw new RuntimeException("Gemini API error $code: " . ($res['error']['message'] ?? $res['raw'] ?? 'no details'));
     }
@@ -254,7 +283,17 @@ function ai_extract_one(PDO $admin, int $aeId, ?int $userId): array
     $detail = ['ae_id' => $aeId, 'provider' => ai_config()['provider'] ?? null, 'prompt_version' => AI_PROMPT_VERSION,
                'source' => $userId ? 'manual' : 'scheduler'];
     try {
-        [$answer, $usage, $ms, $model] = ai_call((string)$ae['narrative']);
+        try {
+            [$answer, $usage, $ms, $model] = ai_call((string)$ae['narrative']);
+        } catch (AiRateLimited $e) {
+            // Free tiers limit requests per minute: wait as long as the API asks (max 65 s), then try once more.
+            if ($e->retryAfter > 65) {
+                throw $e;
+            }
+            sleep($e->retryAfter + 1);
+            $detail['retried_after_s'] = $e->retryAfter + 1;
+            [$answer, $usage, $ms, $model] = ai_call((string)$ae['narrative']);
+        }
         $detail += ['model' => $model, 'input_tokens' => $usage['input_tokens'] ?? null,
                     'output_tokens' => $usage['output_tokens'] ?? null, 'ms' => $ms];
         try {

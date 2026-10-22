@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $do = is_string($_POST['do'] ?? null) ? $_POST['do'] : '';
     try {
         if ($do === 'extract_pending' || $do === 'extract_one') {
-            set_time_limit(300);
+            set_time_limit(600);   // free tiers may make it wait for the rate limit between calls
             if ($do === 'extract_one') {
                 $r = ai_extract_one($pdo, (int)($_POST['ae_id'] ?? 0), $u['id']);
                 $r['ok'] ? flash('ok', 'AI answer stored for review.') : flash('error', 'AI extraction failed: ' . $r['error']);
