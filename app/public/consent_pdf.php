@@ -41,7 +41,8 @@ if (!hash_equals((string)$doc['sha256'], $actual)) {
 audit('VIEW_DOC', 'ConsentDocument', (string)$id,
       ['subject' => subject_code((int)$doc['subject_id']), 'version' => $doc['version'], 'result' => 'served']);
 
-$name = subject_code((int)$doc['subject_id']) . '_consent_v' . $doc['version'] . '.pdf';
+// InformedConsent.version already holds the "v" (e.g. "v2.0").
+$name = subject_code((int)$doc['subject_id']) . '_consent_' . $doc['version'] . '.pdf';
 header('Content-Type: ' . $doc['mime_type']);
 header('Content-Length: ' . filesize($path));
 header('Content-Disposition: inline; filename="' . $name . '"');

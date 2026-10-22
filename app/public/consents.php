@@ -33,7 +33,7 @@ page_header('Informed consent');
 <p class="muted">Consent forms are signed PDFs stored on disk (unstructured). The database keeps the path,
 size, a SHA-256 fingerprint and the extracted text, which has a FULLTEXT index. <?= source_tag('structured') ?><?= source_tag('unstructured') ?></p>
 <form class="filters" method="get">
-  <label>Version <?= filter_select('version', ['1.0' => 'v1.0', '2.0' => 'v2.0 (amendment, 11 May 2026)'], $version) ?></label>
+  <label>Version <?= filter_select('version', ['v1.0' => 'v1.0', 'v2.0' => 'v2.0 (amendment, 11 May 2026)'], $version) ?></label>
   <label>Site <?= filter_select('site', distinct_options('SELECT DISTINCT site_name FROM v_consent_coded ORDER BY 1'), $site) ?></label>
   <input type="hidden" name="sort" value="<?= h($spec[0]) ?>"><input type="hidden" name="dir" value="<?= h($spec[1]) ?>">
   <button class="btn">Filter</button> <a class="btn secondary" href="consents.php">Clear</a>
