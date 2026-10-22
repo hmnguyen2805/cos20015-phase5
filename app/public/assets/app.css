@@ -69,3 +69,15 @@ mark { background: #ffe58f; padding: 0 2px; }
 .login { max-width: 380px; margin: 60px auto; }
 .login label { display: block; margin-bottom: 12px; }
 .login input { width: 100%; }
+
+/* reports */
+.filters label.check span:last-child { color: var(--ink); font-size: 14px; padding: 6px 0; }
+.export-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; padding: 10px 12px;
+              background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.export-bar .email-form { display: flex; gap: 6px; margin: 0; }
+.export-bar .email-form input { width: 220px; }
+.small { font-size: 12px; }
+table.report td { white-space: nowrap; }
+table.report td .narr { display: block; white-space: normal; min-width: 320px; font-size: 13px; }
+table.report tr.totals td { font-weight: 700; background: var(--accent); border-top: 2px solid var(--brand); }
+.notes ul { margin: 0; padding-left: 20px; color: var(--muted); font-size: 13px; }

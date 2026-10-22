@@ -7,14 +7,19 @@ declare(strict_types=1);
  * is looked up in a whitelist and only the whitelisted SQL text is used.
  */
 
-/** Returns [key, dir, 'ORDER BY ...'] for the current request. */
-function sort_spec(array $allowed, string $defaultKey, string $defaultDir = 'asc'): array
+/**
+ * Returns [key, dir, 'ORDER BY ...'] for the current request.
+ * $src defaults to $_GET; the email export passes $_POST instead.
+ */
+function sort_spec(array $allowed, string $defaultKey, string $defaultDir = 'asc', ?array $src = null): array
 {
-    $key = get_str('sort', $defaultKey);
+    $src ??= $_GET;
+    $key = is_string($src['sort'] ?? null) ? $src['sort'] : $defaultKey;
     if (!isset($allowed[$key])) {
         $key = $defaultKey;
     }
-    $dir = strtolower(get_str('dir', $defaultDir)) === 'desc' ? 'desc' : 'asc';
+    $dirIn = is_string($src['dir'] ?? null) ? $src['dir'] : $defaultDir;
+    $dir = strtolower($dirIn) === 'desc' ? 'desc' : 'asc';
     // A sort expression may list several columns; the direction applies to the first.
     $parts = explode(',', $allowed[$key], 2);
     $order = trim($parts[0]) . ' ' . strtoupper($dir) . (isset($parts[1]) ? ', ' . trim($parts[1]) : '');

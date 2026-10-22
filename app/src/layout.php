@@ -12,6 +12,7 @@ function nav_items(): array
         ['ecrfs.php',       'eCRFs',     false],
         ['consents.php',    'Consents',  false],
         ['search.php',      'Search',    false],
+        ['reports.php',     'Reports',   false],
         ['admin_users.php', 'Users',     true],
         ['admin_audit.php', 'Audit log', true],
     ];
@@ -45,7 +46,7 @@ function page_header(string $title): void
   <nav>
     <?php foreach (nav_items() as [$file, $label, $adminOnly]):
         if ($adminOnly && $u['role'] !== 'Admin') continue; ?>
-      <a href="<?= h($file) ?>" class="<?= $self === $file ? 'active' : '' ?>"><?= h($label) ?></a>
+      <a href="<?= h($file) ?>" class="<?= $self === $file || ($file === 'reports.php' && $self === 'report.php') ? 'active' : '' ?>"><?= h($label) ?></a>
     <?php endforeach; ?>
   </nav>
   <div class="who">
