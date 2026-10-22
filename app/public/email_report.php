@@ -1,16 +1,14 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
-require __DIR__ . '/../src/reports.php';
-require __DIR__ . '/../src/export.php';
-require __DIR__ . '/../src/mailer.php';
+require __DIR__ . '/../src/report_mail.php';   // also loads reports, export and mailer
 
 /*
  * Email the current report view as CSV + PDF attachments (POST from report.php).
  *  - CSRF-checked, recipient validated as one plain address.
- *  - Whatever the sender's role, the email is built WITHOUT names and its
- *    queries run as app_reader, so MySQL itself guarantees that no identifiable
- *    data leaves the system by email.
+ *  - Built by report_email_build() (shared with the scheduled emails): whatever
+ *    the sender's role, the email has NO names and its queries run as app_reader,
+ *    so MySQL itself guarantees that no identifiable data leaves by email.
  *  - Limited to 5 emails per 10 minutes per session.
  *  - Every attempt (sent, saved or failed) is written to the audit log.
  */
@@ -39,38 +37,10 @@ if (count($recent) >= 5) {
     redirect($back);
 }
 
-$reader = db('User');                                  // app_reader: coded views only
-$rows = report_rows($req, $reader);
-$totals = $rows ? report_totals($req, $reader) : null;
-$summary = ($def['summary'])($rows, $req['f']);
-
-$lines = [
-    $def['title'] . ' (' . APP_NAME . ')',
-    '',
-    $summary,
-    '',
-    'Filters:',
-];
-foreach (report_active_filters($req) as $label => $v) {
-    $lines[] = "  $label: $v";
-}
-$lines = array_merge($lines, [
-    '',
-    'Sent by ' . $u['name'] . ' (' . $u['role'] . ') on ' . report_now()->format('D j M Y, H:i T') . '.',
-    'Attached: the same view as CSV and PDF. Subjects are shown by code only; names are never emailed.',
-    '',
-    'Synthetic data for COS20015 coursework only. No real people.',
-]);
-
-$attachments = [
-    [export_filename($req, 'csv'), 'text/csv; charset=UTF-8', export_csv($req, $rows, $totals)],
-    [export_filename($req, 'pdf'), 'application/pdf', export_pdf($req, $rows, $totals, $summary, $u)],
-];
-[$msgId, $raw] = mail_build($to, APP_NAME . ': ' . $def['title'] . ' (' . count($rows) . ' rows)',
-                            implode("\r\n", $lines), $attachments);
-
-$detail = report_audit_detail($req, count($rows), ['format' => 'email', 'to' => $to, 'message_id' => $msgId,
-                                                   'transport' => mail_config()['transport'], 'bytes' => strlen($raw)]);
+$mail = report_email_build($req, $u, $to);
+$raw = $mail['raw'];
+$detail = report_audit_detail($req, $mail['rows'], ['format' => 'email', 'to' => $to, 'message_id' => $mail['msg_id'],
+                                                    'transport' => mail_config()['transport'], 'bytes' => strlen($raw)]);
 try {
     $result = mail_deliver($to, $raw);
     $recent[] = time();

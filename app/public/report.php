@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
-require __DIR__ . '/../src/reports.php';
+require_once __DIR__ . '/../src/automation.php';   // reports + the schedule form
 
 /*
  * One page renders all three reports: report.php?r=safety|sites|consent.
@@ -40,6 +40,8 @@ function cell_html(string $key, array $col, array $r, bool $admin): string
         'status_label'   => badge((string)$v, match ($r['status_code'] ?? '') {
                                 'gap', 'early' => 'bad', 'risk', 'doc' => 'warn', 'compliant' => 'ok', default => '' }),
         'pdf_check'      => badge($t, str_starts_with((string)$v, 'OK') ? 'ok' : 'bad'),
+        'severity'       => badge($t, match ($v) { 'High' => 'bad', 'Medium' => 'warn', default => 'ok' }),
+        'status'         => badge($t, match ($v) { 'Open' => 'bad', 'Acknowledged' => 'warn', default => 'ok' }),
         'v1_signed', 'v2_signed' => ($admin && $v !== null && ($id = $r[$key === 'v1_signed' ? 'v1_id' : 'v2_id'] ?? null))
                          ? $t . ' <a href="consent_pdf.php?id=' . (int)$id . '" target="_blank" title="Open the signed PDF">PDF</a>'
                          : $t,
@@ -67,7 +69,7 @@ $q = report_query($req);
 
 page_header($def['title']);
 ?>
-<p class="muted"><a href="reports.php">Reports</a> / <?= h($def['title']) ?>
+<p class="muted"><?= empty($def['hidden']) ? '<a href="reports.php">Reports</a>' : '<a href="automation.php">Automation</a>' ?> / <?= h($def['title']) ?>
   <?php foreach ($def['sources'] as $s) echo source_tag($s); ?></p>
 <p><?= h($def['blurb']) ?></p>
 
@@ -100,6 +102,13 @@ page_header($def['title']);
   </form>
   <span class="muted small">Emails always contain subject codes only, never names.</span>
 </div>
+<?php if (is_admin()): ?>
+<details class="card schedule-box"><summary>Schedule this view by email</summary>
+  <p class="muted small">Saves these filters and this sort. The scheduler re-runs the report at the chosen time and emails it
+  (codes only). Tick "Only when there are rows" to turn a filtered view into an alert, e.g. Consent compliance with Status = Gap.</p>
+  <?= schedule_form_html($q, $def['title']) ?>
+</details>
+<?php endif; ?>
 
 <p><strong><?= h(($def['summary'])($rows, $f)) ?></strong></p>
 <div class="table-wrap"><table class="report">

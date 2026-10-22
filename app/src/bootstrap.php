@@ -23,20 +23,22 @@ function config(): array
     return $cfg;
 }
 
-/* ---------- session ---------- */
-ini_set('session.use_strict_mode', '1');
-ini_set('session.use_only_cookies', '1');
-session_name('ctt_session');
-session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'httponly' => true, 'samesite' => 'Strict']);
-session_start();
+/* ---------- session (web only: command-line tools such as the scheduler have none) ---------- */
+if (PHP_SAPI !== 'cli') {
+    ini_set('session.use_strict_mode', '1');
+    ini_set('session.use_only_cookies', '1');
+    session_name('ctt_session');
+    session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'httponly' => true, 'samesite' => 'Strict']);
+    session_start();
 
-if (isset($_SESSION['user'], $_SESSION['last_seen'])
-    && time() - $_SESSION['last_seen'] > SESSION_IDLE_SECONDS) {
-    $_SESSION = [];
-    session_regenerate_id(true);
-    $_SESSION['flash'][] = ['info', 'You were logged out after 30 minutes of inactivity.'];
+    if (isset($_SESSION['user'], $_SESSION['last_seen'])
+        && time() - $_SESSION['last_seen'] > SESSION_IDLE_SECONDS) {
+        $_SESSION = [];
+        session_regenerate_id(true);
+        $_SESSION['flash'][] = ['info', 'You were logged out after 30 minutes of inactivity.'];
+    }
+    $_SESSION['last_seen'] = time();
 }
-$_SESSION['last_seen'] = time();
 
 /* ---------- database: one connection per MySQL account ----------
  * 'auth'  -> app_auth   (login screen only)
@@ -61,10 +63,16 @@ function db(string $account): PDO
     return $pool[$account];
 }
 
-/** Connection for the current session: app_admin for Admins, app_reader for Users. */
+/** Connection for the current session: app_admin for Admins, app_reader for Users.
+ *  Command-line tools (the scheduler) have no session and default to app_reader,
+ *  the least privileged account; they ask for app_admin explicitly where needed. */
 function db_session(): PDO
 {
-    $u = current_user() ?? throw new RuntimeException('Not logged in');
+    $u = current_user();
+    if ($u === null && PHP_SAPI === 'cli') {
+        return db('User');
+    }
+    $u ?? throw new RuntimeException('Not logged in');
     return db($u['role']);
 }
 

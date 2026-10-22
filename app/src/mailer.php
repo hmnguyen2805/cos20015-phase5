@@ -20,6 +20,10 @@ function mail_config(): array
         $file = __DIR__ . '/../config/mail.php';
         $cfg = is_file($file) ? require $file : [];
         $cfg += ['transport' => 'outbox', 'from' => 'ctt-reports@localhost', 'from_name' => APP_NAME];
+        // The smoke test starts the scheduler with CTT_MAIL_OUTBOX=1 so a test never sends real email.
+        if (PHP_SAPI === 'cli' && getenv('CTT_MAIL_OUTBOX') === '1') {
+            $cfg['transport'] = 'outbox';
+        }
     }
     return $cfg;
 }
@@ -79,7 +83,8 @@ function mail_deliver(string $to, string $raw): string
     if (!is_dir($dir) && !mkdir($dir, 0700, true) && !is_dir($dir)) {
         throw new RuntimeException('Cannot create storage/outbox');
     }
-    $file = $dir . '/' . date('Ymd-His') . '_' . preg_replace('/[^a-z0-9]+/i', '_', $to) . '.eml';
+    // Random suffix: two emails to the same address in the same second must not overwrite each other.
+    $file = $dir . '/' . date('Ymd-His') . '_' . bin2hex(random_bytes(3)) . '_' . preg_replace('/[^a-z0-9]+/i', '_', $to) . '.eml';
     file_put_contents($file, $raw);
     return 'saved to storage/outbox/' . basename($file) . ' (no SMTP server configured)';
 }

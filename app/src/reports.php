@@ -180,8 +180,68 @@ function report_defs(): array
             'Change "Amendment effective" to test the rule: an earlier date shows which subjects would have needed re-consent.',
         ],
     ],
+    /* ------------------------------------------------------------------ */
+    // Not one of the three reports (hidden from the Reports page). It lets the
+    // Automation page, its CSV/PDF export and the scheduled digest email reuse
+    // the same report plumbing for the findings of the automated checks.
+    'findings' => [
+        'hidden'  => true,
+        'title'   => 'Automated check findings',
+        'blurb'   => 'Problems found by the database checks (procedure sp_run_checks, run every night by a MySQL event). '
+                   . 'A finding is resolved automatically when the next run no longer sees the problem.',
+        'sources' => ['structured', 'semi', 'unstructured'],
+        'filters' => [
+            'status'   => ['type' => 'select', 'label' => 'Status', 'default' => 'active', 'all' => 'Any status', 'options' => [
+                               'active' => 'Open or acknowledged', 'Open' => 'Open', 'Acknowledged' => 'Acknowledged',
+                               'Resolved' => 'Resolved']],
+            'severity' => ['type' => 'select', 'label' => 'Severity', 'options' => ['High' => 'High', 'Medium' => 'Medium', 'Low' => 'Low']],
+            'check'    => ['type' => 'select', 'label' => 'Check', 'options' =>
+                               fn() => array_column(q('SELECT check_code, title FROM CheckRule ORDER BY title'), 'title', 'check_code')],
+            'site'     => ['type' => 'select', 'label' => 'Site', 'options' => $sites],
+        ],
+        'default_sort' => 'severity',
+        'columns' => [
+            'severity'     => ['label' => 'Severity',   'w' => 14, 'sort' => '`sev_rank`, `check_title`, `subject_code`'],
+            'status'       => ['label' => 'Status',     'w' => 20],
+            'check_title'  => ['label' => 'Check',      'w' => 44],
+            'subject_code' => ['label' => 'Subject',    'w' => 14],
+            'site_name'    => ['label' => 'Site',       'w' => 38],
+            'message'      => ['label' => 'Finding',    'w' => 110, 'sort' => false],
+            'first_seen'   => ['label' => 'First seen', 'w' => 26],
+            'ack_note'     => ['label' => 'Note',       'w' => 40, 'sort' => false],
+        ],
+        'sql' => 'report_findings_sql',
+        'summary' => function (array $rows): string {
+            $s = array_count_values(array_column($rows, 'severity'));
+            return sprintf('%d finding(s): %d High, %d Medium, %d Low.', count($rows), $s['High'] ?? 0, $s['Medium'] ?? 0, $s['Low'] ?? 0);
+        },
+        'notes' => [
+            'Each rule is one SELECT in the view v_check_candidates; sp_run_checks saves what they find in CheckFinding.',
+            'Open = new; Acknowledged = an Admin has noted what is being done; Resolved = the data no longer has the problem.',
+            'A resolved problem that comes back is re-opened. Findings name subjects by code only.',
+        ],
+    ],
     ];
     return $defs;
+}
+
+/* ======================================================================
+ * Hidden report: findings of the automated checks
+ * ==================================================================== */
+function report_findings_sql(array $f, bool $identified, bool $total = false): array
+{
+    $where = [];
+    $p = [];
+    if ($f['status'] === 'active')  { $where[] = "status <> 'Resolved'"; }
+    elseif ($f['status'] !== '')    { $where[] = 'status = ?';     $p[] = $f['status']; }
+    if ($f['severity'] !== '')      { $where[] = 'severity = ?';   $p[] = $f['severity']; }
+    if ($f['check'] !== '')         { $where[] = 'check_code = ?'; $p[] = $f['check']; }
+    if ($f['site'] !== '')          { $where[] = 'site_name = ?';  $p[] = $f['site']; }
+    $sql = "SELECT * FROM (
+        SELECT finding_id, check_code, check_title, subject_code, site_name, severity, status, message,
+               first_seen, last_seen, resolved_at, ack_note, FIELD(severity, 'High', 'Medium', 'Low') AS sev_rank
+        FROM v_finding_coded) rpt" . ($where ? "\n    WHERE " . implode(' AND ', $where) : '');
+    return [$sql, $p];
 }
 
 function report_def(string $key): ?array

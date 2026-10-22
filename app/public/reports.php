@@ -9,7 +9,7 @@ page_header('Reports');
 <p class="muted">Each report can be filtered and sorted, then exported as CSV or PDF or emailed.
 Every run and export is written to the audit log.</p>
 <div class="grid">
-  <?php foreach (report_defs() as $key => $d): ?>
+  <?php foreach (report_defs() as $key => $d): if (!empty($d['hidden'])) continue; ?>
   <div class="card">
     <h2><a href="report.php?r=<?= h($key) ?>"><?= h($d['title']) ?></a></h2>
     <p><?php foreach ($d['sources'] as $s) echo source_tag($s); ?></p>
