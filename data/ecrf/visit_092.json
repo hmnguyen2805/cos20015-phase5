@@ -1,0 +1,12 @@
+{
+  "formVersion": "2.0",
+  "subjectId": 25,
+  "visitType": "Dosing Visit 1",
+  "scheduledDate": "2026-07-02",
+  "vitals": {
+    "heartRate": 68,
+    "bloodPressure": "129/82",
+    "temperatureC": 37.0,
+    "weightKg": 77.9
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "formVersion": "2.0",
+  "subjectId": 21,
+  "visitType": "Dosing Visit 2",
+  "scheduledDate": "2026-06-08",
+  "vitals": {
+    "heartRate": 77,
+    "bloodPressure": "123/74",
+    "temperatureC": 37.0,
+    "weightKg": 80.9
+  },
+  "concomitantMeds": [
+    {
+      "name": "Cetirizine",
+      "dose": "10 mg",
+      "indication": "Seasonal allergy"
+    }
+  ],
+  "investigatorComment": "ALT 51 U/L, above ULN 40 U/L; repeat at next visit. AE reported: Alanine aminotransferase increased (Moderate)."
+}

@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "AppointmentRecord",
+  "description": "eCRF for one completed study visit, v2 of the Phase-01 schema. Copy of the schema inside CHECK chk_ecrf_schema (sql/06_phase5_schema.sql); the app uses it only to explain WHY MySQL rejected a document.",
+  "type": "object",
+  "required": ["subjectId", "visitType", "scheduledDate"],
+  "properties": {
+    "formVersion":   { "type": "string" },
+    "subjectId":     { "type": "integer", "minimum": 1 },
+    "visitType":     { "type": "string",
+                       "enum": ["Screening Visit", "Dosing Visit 1", "Dosing Visit 2", "Follow-up Visit"] },
+    "scheduledDate": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "vitals": {
+      "type": "object",
+      "properties": {
+        "heartRate":     { "type": "integer", "minimum": 20, "maximum": 250 },
+        "bloodPressure": { "type": "string", "pattern": "^[0-9]{2,3}/[0-9]{2,3}$" },
+        "temperatureC":  { "type": "number", "minimum": 30, "maximum": 45 },
+        "weightKg":      { "type": "number", "minimum": 20, "maximum": 300 }
+      },
+      "additionalProperties": false
+    },
+    "concomitantMeds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name":       { "type": "string" },
+          "dose":       { "type": "string" },
+          "indication": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "investigatorComment": { "type": "string", "maxLength": 1000 }
+  },
+  "additionalProperties": false
+}

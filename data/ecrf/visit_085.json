@@ -1,0 +1,13 @@
+{
+  "formVersion": "2.0",
+  "subjectId": 23,
+  "visitType": "Dosing Visit 2",
+  "scheduledDate": "2026-05-14",
+  "vitals": {
+    "heartRate": 68,
+    "bloodPressure": "119/80",
+    "temperatureC": 36.6,
+    "weightKg": 67.9
+  },
+  "investigatorComment": "ALT 96 U/L, above ULN 40 U/L; repeat at next visit. AE reported: Alanine aminotransferase increased (Moderate)."
+}

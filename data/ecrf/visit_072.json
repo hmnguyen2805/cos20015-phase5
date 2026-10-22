@@ -1,0 +1,12 @@
+{
+  "formVersion": "2.0",
+  "subjectId": 19,
+  "visitType": "Follow-up Visit",
+  "scheduledDate": "2026-08-07",
+  "vitals": {
+    "heartRate": 66,
+    "bloodPressure": "112/77",
+    "temperatureC": 36.5,
+    "weightKg": 83.4
+  }
+}

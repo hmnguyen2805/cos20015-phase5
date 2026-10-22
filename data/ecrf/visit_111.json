@@ -1,0 +1,12 @@
+{
+  "formVersion": "2.0",
+  "subjectId": 30,
+  "visitType": "Screening Visit",
+  "scheduledDate": "2026-09-08",
+  "vitals": {
+    "heartRate": 62,
+    "bloodPressure": "110/70",
+    "temperatureC": 37.0,
+    "weightKg": 77.3
+  }
+}

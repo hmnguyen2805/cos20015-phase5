@@ -1,0 +1,20 @@
+{
+  "formVersion": "2.0",
+  "subjectId": 14,
+  "visitType": "Dosing Visit 2",
+  "scheduledDate": "2026-07-30",
+  "vitals": {
+    "heartRate": 79,
+    "bloodPressure": "130/80",
+    "temperatureC": 36.9,
+    "weightKg": 63.8
+  },
+  "concomitantMeds": [
+    {
+      "name": "Loratadine",
+      "dose": "10 mg",
+      "indication": "Pruritic rash"
+    }
+  ],
+  "investigatorComment": "ALT 88 U/L, above ULN 40 U/L; repeat at next visit. AE reported: Pruritic rash (Mild). AE reported: Alanine aminotransferase increased (Moderate)."
+}

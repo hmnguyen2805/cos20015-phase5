@@ -1,0 +1,19 @@
+{
+  "formVersion": "2.0",
+  "subjectId": 27,
+  "visitType": "Screening Visit",
+  "scheduledDate": "2026-08-25",
+  "vitals": {
+    "heartRate": 64,
+    "bloodPressure": "113/67",
+    "temperatureC": 36.6,
+    "weightKg": 82.9
+  },
+  "concomitantMeds": [
+    {
+      "name": "Vitamin D",
+      "dose": "1000 IU",
+      "indication": "Supplement"
+    }
+  ]
+}

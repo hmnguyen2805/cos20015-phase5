@@ -1,0 +1,9 @@
+{
+  "subjectId": 18,
+  "visitType": "Screening Visit",
+  "scheduledDate": "2026-02-13",
+  "vitals": {
+    "heartRate": 55,
+    "bloodPressure": "125/81"
+  }
+}

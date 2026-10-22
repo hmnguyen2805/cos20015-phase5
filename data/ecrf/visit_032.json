@@ -1,0 +1,13 @@
+{
+  "formVersion": "2.0",
+  "subjectId": 8,
+  "visitType": "Follow-up Visit",
+  "scheduledDate": "2026-06-22",
+  "vitals": {
+    "heartRate": 68,
+    "bloodPressure": "119/72",
+    "temperatureC": 36.8,
+    "weightKg": 64.5
+  },
+  "investigatorComment": "ALT 47 U/L, above ULN 40 U/L; repeat at next visit."
+}

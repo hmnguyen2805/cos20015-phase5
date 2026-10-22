@@ -1,0 +1,19 @@
+{
+  "formVersion": "2.0",
+  "subjectId": 7,
+  "visitType": "Dosing Visit 2",
+  "scheduledDate": "2026-05-12",
+  "vitals": {
+    "heartRate": 78,
+    "bloodPressure": "124/72",
+    "temperatureC": 36.8,
+    "weightKg": 67.6
+  },
+  "concomitantMeds": [
+    {
+      "name": "Cetirizine",
+      "dose": "10 mg",
+      "indication": "Seasonal allergy"
+    }
+  ]
+}

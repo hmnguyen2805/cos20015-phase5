@@ -1,0 +1,19 @@
+{
+  "formVersion": "2.0",
+  "subjectId": 21,
+  "visitType": "Follow-up Visit",
+  "scheduledDate": "2026-06-23",
+  "vitals": {
+    "heartRate": 84,
+    "bloodPressure": "124/70",
+    "temperatureC": 36.9,
+    "weightKg": 81.4
+  },
+  "concomitantMeds": [
+    {
+      "name": "Cetirizine",
+      "dose": "10 mg",
+      "indication": "Seasonal allergy"
+    }
+  ]
+}

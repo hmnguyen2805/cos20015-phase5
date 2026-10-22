@@ -1,0 +1,20 @@
+{
+  "formVersion": "2.0",
+  "subjectId": 14,
+  "visitType": "Dosing Visit 1",
+  "scheduledDate": "2026-07-17",
+  "vitals": {
+    "heartRate": 74,
+    "bloodPressure": "132/81",
+    "temperatureC": 36.7,
+    "weightKg": 64.0
+  },
+  "concomitantMeds": [
+    {
+      "name": "Paracetamol",
+      "dose": "500 mg",
+      "indication": "Headache"
+    }
+  ],
+  "investigatorComment": "AE reported: Headache (Mild)."
+}

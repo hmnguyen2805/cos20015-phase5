@@ -1,0 +1,19 @@
+{
+  "formVersion": "2.0",
+  "subjectId": 12,
+  "visitType": "Dosing Visit 1",
+  "scheduledDate": "2026-05-15",
+  "vitals": {
+    "heartRate": 63,
+    "bloodPressure": "116/67",
+    "temperatureC": 36.7,
+    "weightKg": 53.3
+  },
+  "concomitantMeds": [
+    {
+      "name": "Vitamin D",
+      "dose": "1000 IU",
+      "indication": "Supplement"
+    }
+  ]
+}
