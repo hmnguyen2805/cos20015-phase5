@@ -61,6 +61,22 @@ foreach ($tmp as $name => $role) {
 }
 $ids = $admin->query("SELECT user_id FROM AppUser WHERE username LIKE 'zz\\_test\\_%'")->fetchAll(PDO::FETCH_COLUMN);
 $name1 = $admin->query("SELECT CONCAT(first_name, ' ', last_name) FROM Subject WHERE subject_id = 1")->fetchColumn();
+$name23 = $admin->query("SELECT CONCAT(first_name, ' ', last_name) FROM Subject WHERE subject_id = 23")->fetchColumn();
+
+// Report email: the test only checks delivery when no SMTP server is set up (outbox mode).
+$mailFile = __DIR__ . '/../config/mail.php';
+$mailTransport = is_file($mailFile) ? ((require $mailFile)['transport'] ?? 'outbox') : 'outbox';
+$outbox = $cfg['phase5_root'] . '/storage/outbox';
+
+/** Decode the attachment whose filename ends with $suffix from a saved .eml. */
+function eml_attachment(string $raw, string $suffix): string {
+    foreach (preg_split('/^--=_ctt_[0-9a-f]+(?:--)?\r?$/m', $raw) as $part) {
+        if (preg_match('/filename="[^"]*' . preg_quote($suffix, '/') . '"\r?\n\r?\n(.*)$/s', $part, $m)) {
+            return (string)base64_decode(preg_replace('/\s+/', '', $m[1]));
+        }
+    }
+    return '';
+}
 $ecrfId = (int)$admin->query("SELECT ecrf_id FROM VisitECRF WHERE med_count > 0 ORDER BY ecrf_id LIMIT 1")->fetchColumn();
 $origDoc = $admin->query("SELECT ecrf_doc FROM VisitECRF WHERE ecrf_id = $ecrfId")->fetchColumn();
 
@@ -98,6 +114,58 @@ try {
     check('User cannot open user admin (403)', $r['code'] === 403);
     $r = $u->req('search.php?q=ALT&scope=consent');
     check('User search is limited to AE narratives', $r['code'] === 200 && str_contains($r['body'], 'Adverse event narratives') && !str_contains($r['body'], 'Consent documents ('));
+
+    echo "Reports (User role)\n";
+    $r = $u->req('reports.php');
+    check('Reports index lists the three reports', $r['code'] === 200 && substr_count($r['body'], 'report.php?r=') >= 3);
+    $r = $u->req('report.php?r=safety');
+    check('Safety review = Phase-04 A UNION B (14 subjects, 2 in both)', str_contains($r['body'], '14 subject(s): 2 in both sets, 6 in A only, 6 in B only.'));
+    check('Safety review hides names from Users', !str_contains($r['body'], $name23), $name23);
+    $r = $u->req('report.php?r=safety&group=Both');
+    check('Filter group=Both gives A INTERSECT B = S023, S025', str_contains($r['body'], '2 subject(s)') && str_contains($r['body'], 'S023') && str_contains($r['body'], 'S025'));
+    $r = $u->req('report.php?r=safety&keyword=vomit');
+    check('Narrative keyword filter (LIKE on free text)', str_contains($r['body'], '2 subject(s)') && str_contains($r['body'], 'S009') && str_contains($r['body'], 'S022'));
+    $r = $u->req('report.php?' . http_build_query(['r' => 'safety', 'sort' => '1;DROP TABLE Visit', 'dir' => 'x', 'severity' => 'Fatal']));
+    check('Report ignores unknown sort keys and filter values', $r['code'] === 200 && str_contains($r['body'], '14 subject(s)'));
+    $r = $u->req('report.php?r=safety&alt_high=1&sort=peak_alt&dir=desc');
+    check('Sort by peak ALT descending puts S023 (96 U/L) first',
+          preg_match_all('/subject\.php\?code=(S\d{3})/', $r['body'], $m) && ($m[1][0] ?? '') === 'S023' && count($m[1]) === 6);
+    $r = $u->req('report.php?r=sites');
+    check('Site report totals row: 30 enrolled, 102 visits done', str_contains($r['body'], 'All sites')
+          && preg_match('/class="totals">.*?<td class="num">30<\/td>\s*<td class="num">102<\/td>/s', $r['body']) === 1);
+    $r = $u->req('report.php?r=sites&breakdown=month&site=' . urlencode('Northside Research Clinic'));
+    check('Site report per month for one site', str_contains($r['body'], '6 row(s)') && str_contains($r['body'], '2026-03'));
+    $r = $u->req('report.php?r=consent');
+    check('Consent compliance: no gaps at the 11 May amendment', str_contains($r['body'], '30 subject(s): 0 with an issue, 16 compliant, 14 not required'));
+    $r = $u->req('report.php?r=consent&amend=2026-04-01&status=gap');
+    check('Consent what-if: amendment on 1 Apr gives 16 gaps', str_contains($r['body'], '16 subject(s): 16 with an issue'));
+    check('Consent report shows PDF cross-check to Users (no PDF link)', str_contains($r['body'], 'OK (') && !str_contains($r['body'], 'consent_pdf.php'));
+
+    $r = $u->req('export.php?r=safety&format=csv&group=Both');
+    $lines = array_values(array_filter(explode("\n", $r['body'])));
+    check('CSV export: text/csv, BOM, header + 2 rows', str_contains($r['head'], 'text/csv') && str_starts_with($r['body'], "\xEF\xBB\xBF")
+          && count($lines) === 3 && str_starts_with($lines[1], 'S023'));
+    check('CSV export by a User has no names', !str_contains($r['body'], $name23));
+    $r = $u->req('export.php?r=consent&format=pdf');
+    check('PDF export: application/pdf', $r['code'] === 200 && str_starts_with($r['body'], '%PDF') && str_contains($r['head'], 'application/pdf'));
+    $r = $u->req('export.php?r=nope&format=csv');
+    check('Unknown report export is 404', $r['code'] === 404);
+
+    $t = Browser::token($u->req('report.php?r=safety')['body']);
+    $r = $u->req('email_report.php', ['csrf' => 'bad', 'r' => 'safety', 'to' => 'zz-smoke@example.com']);
+    check('Email without a valid CSRF token is rejected (400)', $r['code'] === 400);
+    $r = $u->req('email_report.php', ['csrf' => $t, 'r' => 'safety', 'to' => "zz@example.com\r\nBcc: x@example.com"]);
+    check('Email refuses a header-injection address', $r['code'] === 302 && str_contains($u->req('report.php?r=safety')['body'], 'Enter one valid email address'));
+    if ($mailTransport === 'outbox') {
+        $before = glob($outbox . '/*zz_smoke*.eml') ?: [];
+        $r = $u->req('email_report.php', ['csrf' => $t, 'r' => 'safety', 'group' => 'Both', 'to' => 'zz-smoke@example.com']);
+        $after = array_values(array_diff(glob($outbox . '/*zz_smoke*.eml') ?: [], $before));
+        $csv = $after ? eml_attachment((string)file_get_contents($after[0]), '.csv') : '';
+        check('Email (outbox) saves an .eml with the filtered CSV attached', $r['code'] === 302 && count($after) === 1
+              && str_contains($csv, 'S023') && str_contains($csv, 'S025'));
+    } else {
+        echo "  SKIP email delivery test (mail.php uses SMTP; the test never sends real email)\n";
+    }
 
     echo "Admin role\n";
     $a = new Browser($BASE);
@@ -146,6 +214,28 @@ try {
     $n = (int)$admin->query("SELECT COUNT(*) FROM AuditLog WHERE action = 'UPDATE' AND table_name = 'VisitECRF' AND record_id = '$ecrfId'")->fetchColumn();
     check('Audit log has old/new rows for the two eCRF edits', $n === 2, "found $n");
 
+    echo "Reports (Admin role)\n";
+    $r = $a->req('report.php?r=safety&group=Both');
+    check('Admin safety review shows names', str_contains($r['body'], $name23));
+    $r = $a->req('report.php?r=consent');
+    check('Admin consent report links the signed PDFs', str_contains($r['body'], 'consent_pdf.php?id='));
+    $r = $a->req('export.php?r=safety&format=csv&group=Both');
+    check('Admin CSV export includes names (same as the screen)', str_contains($r['body'], $name23));
+    if ($mailTransport === 'outbox') {
+        $t = Browser::token($a->req('report.php?r=safety')['body']);
+        $before = glob($outbox . '/*zz_smoke*.eml') ?: [];
+        $a->req('email_report.php', ['csrf' => $t, 'r' => 'safety', 'group' => 'Both', 'to' => 'zz-smoke@example.com']);
+        $after = array_values(array_diff(glob($outbox . '/*zz_smoke*.eml') ?: [], $before));
+        $csv = $after ? eml_attachment((string)file_get_contents($after[0]), '.csv') : '';
+        check('Admin email still has codes only (built as app_reader)', str_contains($csv, 'S023') && !str_contains($csv, $name23));
+    }
+    $ids2 = implode(',', array_map('intval', $ids));
+    $runs = (int)$admin->query("SELECT COUNT(*) FROM AuditLog WHERE action = 'REPORT_RUN' AND user_id IN ($ids2)")->fetchColumn();
+    $exp  = $admin->query("SELECT GROUP_CONCAT(DISTINCT detail->>'$.format' ORDER BY detail->>'$.format')
+                           FROM AuditLog WHERE action = 'EXPORT' AND user_id IN ($ids2)")->fetchColumn();
+    check('Audit log has REPORT_RUN rows and EXPORT rows per format', $runs >= 10
+          && $exp === ($mailTransport === 'outbox' ? 'csv,email,pdf' : 'csv,pdf'), "runs=$runs formats=$exp");
+
     $t = Browser::token($a->req('dashboard.php')['body']);
     $r = $a->req('logout.php', ['csrf' => $t]);
     check('Logout works', $r['code'] === 302 && $a->req('dashboard.php')['code'] === 302);
@@ -156,6 +246,13 @@ try {
     catch (PDOException $e) { check('app_reader blocked from Subject table (MySQL error ' . $e->errorInfo[1] . ')', $e->errorInfo[1] === 1142); }
     try { $reader->query('DELETE FROM AuditLog'); check('app_reader cannot delete audit rows', false); }
     catch (PDOException $e) { check('app_reader cannot delete audit rows', $e->errorInfo[1] === 1142); }
+    $n = (int)$reader->query('SELECT COUNT(*) FROM v_dose_coded')->fetchColumn();
+    check('app_reader can read the report view v_dose_coded (60 rows)', $n === 60, "found $n");
+    $n = (int)$reader->query('SELECT SUM(doc_version = version AND doc_subject_code = subject_code AND doc_signed_date = signed_date)
+                              FROM v_consent_doc_check')->fetchColumn();
+    check('All 34 consent PDFs agree with their records (v_consent_doc_check)', $n === 34, "found $n");
+    try { $reader->query('SELECT extracted_text FROM ConsentDocument LIMIT 1'); check('app_reader blocked from consent PDF text', false); }
+    catch (PDOException $e) { check('app_reader blocked from consent PDF text (MySQL error ' . $e->errorInfo[1] . ')', $e->errorInfo[1] === 1142); }
 } finally {
     /* ---------- cleanup ---------- */
     $admin->prepare('UPDATE VisitECRF SET ecrf_doc = ? WHERE ecrf_id = ?')->execute([$origDoc, $ecrfId]);
@@ -165,6 +262,9 @@ try {
                       OR (action = 'LOGIN_FAILED' AND detail->>'$.username' IN ('zz_test_user', 'nobody_zz'))
                       OR (table_name = 'AppUser' AND record_id IN ($in))");
         $admin->exec("DELETE FROM AppUser WHERE user_id IN ($in)");
+    }
+    foreach (glob($outbox . '/*zz_smoke*.eml') ?: [] as $f) {
+        unlink($f);
     }
     echo "\nCleanup done: temporary users and their audit rows removed.\n";
 }
