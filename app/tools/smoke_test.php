@@ -3,8 +3,10 @@ declare(strict_types=1);
 
 /*
  * End-to-end smoke test of the web app, for both roles.
- * Creates two temporary users with random passwords, drives the pages over HTTP
- * (Apache must be running), then deletes the users and their audit rows.
+ * Creates (or re-activates) two test users with random passwords, drives the pages
+ * over HTTP (Apache must be running), then deactivates the users again. Their audit
+ * rows are KEPT: the audit log is append-only, even the Admin account cannot delete
+ * from it. Audit checks only count rows written during this run.
  *
  *   C:\xampp\php\php.exe app\tools\smoke_test.php
  */
@@ -60,6 +62,7 @@ foreach ($tmp as $name => $role) {
           ->execute([$name, "Smoke test $role", password_hash($pw[$name], PASSWORD_DEFAULT), $role]);
 }
 $ids = $admin->query("SELECT user_id FROM AppUser WHERE username LIKE 'zz\\_test\\_%'")->fetchAll(PDO::FETCH_COLUMN);
+$startAudit = (int)$admin->query('SELECT COALESCE(MAX(audit_id), 0) FROM AuditLog')->fetchColumn();   // only count this run's rows
 $name1 = $admin->query("SELECT CONCAT(first_name, ' ', last_name) FROM Subject WHERE subject_id = 1")->fetchColumn();
 $name23 = $admin->query("SELECT CONCAT(first_name, ' ', last_name) FROM Subject WHERE subject_id = 23")->fetchColumn();
 
@@ -167,6 +170,19 @@ try {
         echo "  SKIP email delivery test (mail.php uses SMTP; the test never sends real email)\n";
     }
 
+    echo "Automation (User role)\n";
+    $r = $u->req('automation.php');
+    check('User sees the Automation page with findings', $r['code'] === 200 && str_contains($r['body'], 'Open findings')
+          && str_contains($r['body'], 'S023'));
+    check('User sees no schedules, no Run checks button and no names', !str_contains($r['body'], 'Scheduled emails')
+          && !str_contains($r['body'], 'value="run_checks"') && !str_contains($r['body'], 'value="ack"')
+          && !str_contains($r['body'], $name23));
+    $r = $u->req('automation.php', ['csrf' => Browser::token($r['body']), 'do' => 'run_checks']);
+    check('User cannot run the checks (403)', $r['code'] === 403);
+    $r = $u->req('dashboard.php');
+    check('User dashboard shows the automated-check alert card', str_contains($r['body'], 'Automated checks:') && !str_contains($r['body'], 'ai_review.php'));
+    check('User cannot open the AI review page (403)', $u->req('ai_review.php')['code'] === 403);
+
     echo "Admin role\n";
     $a = new Browser($BASE);
     $r = $a->login('zz_test_admin', $pw['zz_test_admin']);
@@ -211,7 +227,7 @@ try {
 
     $r = $a->req('admin_audit.php?action=VIEW_DOC');
     check('Audit log recorded the PDF view', str_contains($r['body'], 'ConsentDocument'));
-    $n = (int)$admin->query("SELECT COUNT(*) FROM AuditLog WHERE action = 'UPDATE' AND table_name = 'VisitECRF' AND record_id = '$ecrfId'")->fetchColumn();
+    $n = (int)$admin->query("SELECT COUNT(*) FROM AuditLog WHERE action = 'UPDATE' AND table_name = 'VisitECRF' AND record_id = '$ecrfId' AND audit_id > $startAudit")->fetchColumn();
     check('Audit log has old/new rows for the two eCRF edits', $n === 2, "found $n");
 
     echo "Reports (Admin role)\n";
@@ -230,11 +246,94 @@ try {
         check('Admin email still has codes only (built as app_reader)', str_contains($csv, 'S023') && !str_contains($csv, $name23));
     }
     $ids2 = implode(',', array_map('intval', $ids));
-    $runs = (int)$admin->query("SELECT COUNT(*) FROM AuditLog WHERE action = 'REPORT_RUN' AND user_id IN ($ids2)")->fetchColumn();
+    $runs = (int)$admin->query("SELECT COUNT(*) FROM AuditLog WHERE action = 'REPORT_RUN' AND user_id IN ($ids2) AND audit_id > $startAudit")->fetchColumn();
     $exp  = $admin->query("SELECT GROUP_CONCAT(DISTINCT detail->>'$.format' ORDER BY detail->>'$.format')
-                           FROM AuditLog WHERE action = 'EXPORT' AND user_id IN ($ids2)")->fetchColumn();
+                           FROM AuditLog WHERE action = 'EXPORT' AND user_id IN ($ids2) AND audit_id > $startAudit")->fetchColumn();
     check('Audit log has REPORT_RUN rows and EXPORT rows per format', $runs >= 10
           && $exp === ($mailTransport === 'outbox' ? 'csv,email,pdf' : 'csv,pdf'), "runs=$runs formats=$exp");
+
+    echo "Automation (Admin role)\n";
+    $r = $a->req('automation.php');
+    check('Admin Automation page shows findings, runs and schedules', $r['code'] === 200
+          && str_contains($r['body'], 'Recent check runs') && str_contains($r['body'], 'Scheduled emails'));
+    $t = Browser::token($r['body']);
+    $a->req('automation.php', ['csrf' => $t, 'do' => 'run_checks']);
+    $n = (int)$admin->query("SELECT COUNT(*) FROM AuditLog WHERE action = 'CHECK_RUN' AND audit_id > $startAudit
+                             AND detail->>'$.source' = 'MANUAL' AND user_id IN ($ids2)")->fetchColumn();
+    check('Run checks now calls sp_run_checks and is audited', $n === 1 && str_contains($a->req('automation.php')['body'], 'finished:'), "audit=$n");
+
+    // A temporary problem in the JSON eCRF, so the test never acknowledges a real finding.
+    $hot = json_decode($origDoc, true);
+    $hot['vitals']['heartRate'] = 130;
+    $admin->prepare('UPDATE VisitECRF SET ecrf_doc = ? WHERE ecrf_id = ?')->execute([json_encode($hot), $ecrfId]);
+    $a->req('automation.php', ['csrf' => $t, 'do' => 'run_checks']);
+    $fid = (int)$admin->query("SELECT finding_id FROM CheckFinding WHERE check_code = 'VITALS_ALERT'
+                               AND record_ref = 'eCRF:$ecrfId' AND status = 'Open'")->fetchColumn();
+    check('Heart rate 130 in the eCRF JSON becomes an Open finding', $fid > 0);
+    $a->req('automation.php', ['csrf' => $t, 'do' => 'ack', 'finding_id' => $fid, 'note' => 'x']);
+    check('Acknowledge without a real note is refused by sp_ack_finding', str_contains($a->req('automation.php')['body'], 'Write a short note'));
+    $a->req('automation.php', ['csrf' => $t, 'do' => 'ack', 'finding_id' => $fid, 'note' => 'Smoke test: site asked to re-measure']);
+    $st = $admin->query("SELECT status FROM CheckFinding WHERE finding_id = $fid")->fetchColumn();
+    check('Acknowledge with a note works', $st === 'Acknowledged', "status=$st");
+    $admin->prepare('UPDATE VisitECRF SET ecrf_doc = ? WHERE ecrf_id = ?')->execute([$origDoc, $ecrfId]);
+    $a->req('automation.php', ['csrf' => $t, 'do' => 'run_checks']);
+    $st = $admin->query("SELECT status FROM CheckFinding WHERE finding_id = $fid")->fetchColumn();
+    check('Fixing the eCRF resolves the finding on the next run', $st === 'Resolved', "status=$st");
+
+    echo "AI review (Admin role)\n";
+    $r = $a->req('ai_review.php');
+    check('AI review page lists all 19 adverse events with the cross-check columns', $r['code'] === 200
+          && substr_count($r['body'], '<tr id="ae') === 19 && str_contains($r['body'], 'Cross-checks'));
+    $r = $a->req('ai_review.php', ['csrf' => $t, 'do' => 'review', 'extraction_id' => 0, 'decision' => 'APPROVE']);
+    check('Reviewing a non-existent answer is refused by sp_review_extraction', str_contains($a->req('ai_review.php')['body'], 'Only a Pending extraction'));
+    check('Admin dashboard links to the AI review queue', str_contains($a->req('dashboard.php')['body'], 'AI answers waiting for review'));
+
+    echo "Scheduled emails (Admin role)\n";
+    $base = ['csrf' => $t, 'do' => 'create_schedule', 'r' => 'safety', 'group' => 'Both', 'title' => 'zz smoke schedule',
+             'frequency' => 'Daily', 'send_time' => '07:00'];
+    $a->req('automation.php', $base + ['to' => "zz-smoke@example.com\r\nBcc: x@example.com"]);
+    check('Schedule refuses a header-injection address', str_contains($a->req('automation.php')['body'], 'Enter one valid email address'));
+    $a->req('automation.php', array_merge($base, ['to' => 'zz-smoke@example.com', 'frequency' => 'Weekly', 'weekday' => '9']));
+    check('Schedule refuses a weekly schedule without a valid day', str_contains($a->req('automation.php')['body'], 'Choose the day of the week'));
+    // Schedules cannot be deleted (no DELETE grant), so the test reuses its schedule after the first run.
+    $find = "SELECT schedule_id FROM ReportSchedule WHERE title = 'zz smoke schedule' AND created_by IN ($ids2) ORDER BY schedule_id LIMIT 1";
+    if (!($sid = (int)$admin->query($find)->fetchColumn())) {
+        $a->req('automation.php', $base + ['to' => 'zz-smoke@example.com']);
+        $sid = (int)$admin->query($find)->fetchColumn();
+    }
+    $admin->exec("UPDATE ReportSchedule SET is_active = TRUE WHERE schedule_id = $sid");
+    $sch = $admin->query("SELECT params->>'$.group' AS grp, next_run_at > NOW() AS future FROM ReportSchedule WHERE schedule_id = $sid")->fetch();
+    check('A valid schedule is saved with its filters and a future send time', $sid > 0 && $sch['grp'] === 'Both' && (int)$sch['future'] === 1);
+    $r = $a->req('report.php?r=consent&status=gap');
+    check('Report page offers "Schedule this view" to Admins', str_contains($r['body'], 'Schedule this view') && str_contains($r['body'], 'value="gap"'));
+
+    if ($mailTransport === 'outbox') {
+        $before = glob($outbox . '/*zz_smoke*.eml') ?: [];
+        $nextBefore = $admin->query("SELECT next_run_at FROM ReportSchedule WHERE schedule_id = $sid")->fetchColumn();
+        $a->req('automation.php', ['csrf' => $t, 'do' => 'send_now', 'schedule_id' => $sid]);
+        $after = array_values(array_diff(glob($outbox . '/*zz_smoke*.eml') ?: [], $before));
+        $csv = $after ? eml_attachment((string)file_get_contents($after[0]), '.csv') : '';
+        $row = $admin->query("SELECT last_status, next_run_at FROM ReportSchedule WHERE schedule_id = $sid")->fetch();
+        check('Send now emails the saved view (codes only) and keeps the next send time', count($after) === 1
+              && str_contains($csv, 'S023') && !str_contains($csv, $name23) && $row['last_status'] === 'Saved'
+              && $row['next_run_at'] === $nextBefore, "files=" . count($after) . " status=$row[last_status]");
+    } else {
+        echo "  SKIP Send now (mail.php uses SMTP; the test never sends real email)\n";
+    }
+    // The scheduler path: make the schedule due, run the real runner for it (forced to the outbox).
+    $admin->exec("UPDATE ReportSchedule SET next_run_at = NOW() - INTERVAL 1 MINUTE WHERE schedule_id = $sid");
+    $before = glob($outbox . '/*zz_smoke*.eml') ?: [];
+    putenv('CTT_MAIL_OUTBOX=1');
+    exec('"' . PHP_BINARY . '" "' . __DIR__ . '/run_automation.php" --schedule=' . $sid . ' 2>&1', $out, $code);
+    putenv('CTT_MAIL_OUTBOX');
+    $after = array_values(array_diff(glob($outbox . '/*zz_smoke*.eml') ?: [], $before));
+    $row = $admin->query("SELECT last_status, next_run_at > NOW() AS moved FROM ReportSchedule WHERE schedule_id = $sid")->fetch();
+    $n = (int)$admin->query("SELECT COUNT(*) FROM AuditLog WHERE action = 'SCHEDULE_RUN' AND record_id = '$sid'
+                             AND detail->>'$.source' = 'scheduler' AND audit_id > $startAudit")->fetchColumn();
+    check('run_automation.php sends a due schedule, moves it to the next slot and audits it', $code === 0 && count($after) === 1
+          && $row['last_status'] === 'Saved' && (int)$row['moved'] === 1 && $n === 1, "exit=$code files=" . count($after) . " audit=$n " . implode(' | ', $out));
+    $a->req('automation.php', ['csrf' => $t, 'do' => 'toggle_schedule', 'schedule_id' => $sid]);
+    check('Pause switches the schedule off', (int)$admin->query("SELECT is_active FROM ReportSchedule WHERE schedule_id = $sid")->fetchColumn() === 0);
 
     $t = Browser::token($a->req('dashboard.php')['body']);
     $r = $a->req('logout.php', ['csrf' => $t]);
@@ -253,20 +352,28 @@ try {
     check('All 34 consent PDFs agree with their records (v_consent_doc_check)', $n === 34, "found $n");
     try { $reader->query('SELECT extracted_text FROM ConsentDocument LIMIT 1'); check('app_reader blocked from consent PDF text', false); }
     catch (PDOException $e) { check('app_reader blocked from consent PDF text (MySQL error ' . $e->errorInfo[1] . ')', $e->errorInfo[1] === 1142); }
+
+    echo "Database-level least privilege (app_admin account)\n";
+    $blocked = function (string $label, string $sql, int $code) use ($admin): void {
+        try { $admin->exec($sql); check($label, false, 'statement was allowed'); }
+        catch (PDOException $e) { check("$label (MySQL error {$e->errorInfo[1]})", $e->errorInfo[1] === $code, $e->getMessage()); }
+    };
+    $blocked('app_admin cannot delete audit rows', 'DELETE FROM AuditLog WHERE audit_id = -1', 1142);
+    $blocked('app_admin cannot edit audit rows', "UPDATE AuditLog SET action = 'LOGIN' WHERE audit_id = -1", 1142);
+    $blocked('app_admin cannot delete clinical data', 'DELETE FROM Subject WHERE subject_id = -1', 1142);
+    $blocked('app_admin cannot write findings directly (only via sp_ack_finding)', "UPDATE CheckFinding SET status = 'Resolved' WHERE finding_id = -1", 1142);
+    $blocked('app_admin can edit eCRF JSON but not move it to another visit', 'UPDATE VisitECRF SET visit_id = visit_id WHERE ecrf_id = -1', 1143);
 } finally {
     /* ---------- cleanup ---------- */
     $admin->prepare('UPDATE VisitECRF SET ecrf_doc = ? WHERE ecrf_id = ?')->execute([$origDoc, $ecrfId]);
     if ($ids) {
         $in = implode(',', array_map('intval', $ids));
-        $admin->exec("DELETE FROM AuditLog WHERE user_id IN ($in)
-                      OR (action = 'LOGIN_FAILED' AND detail->>'$.username' IN ('zz_test_user', 'nobody_zz'))
-                      OR (table_name = 'AppUser' AND record_id IN ($in))");
-        $admin->exec("DELETE FROM AppUser WHERE user_id IN ($in)");
+        $admin->exec("UPDATE AppUser SET is_active = FALSE WHERE user_id IN ($in)");   // cannot sign in until the next test run
     }
     foreach (glob($outbox . '/*zz_smoke*.eml') ?: [] as $f) {
         unlink($f);
     }
-    echo "\nCleanup done: temporary users and their audit rows removed.\n";
+    echo "\nCleanup done: test users deactivated (their audit rows stay: the audit log is append-only).\n";
 }
 echo "\n$pass passed, $fail failed\n";
 exit($fail ? 1 : 0);
